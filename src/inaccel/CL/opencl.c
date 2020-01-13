@@ -155,9 +155,9 @@ cl_mem inclCreateBuffer(cl_context context, cl_mem_flags flags, size_t size, voi
 }
 
 /* Create a command-queue on a specific device. */
-cl_command_queue inclCreateCommandQueue(cl_context context, cl_device_id device) {
+cl_command_queue inclCreateCommandQueue(cl_context context, cl_device_id device,  	cl_command_queue_properties properties) {
 	cl_int errcode_ret;
-	cl_command_queue command_queue = clCreateCommandQueue(context, device, 0, &errcode_ret);
+	cl_command_queue command_queue = clCreateCommandQueue(context, device, properties, &errcode_ret);
 	if (errcode_ret != CL_SUCCESS || !command_queue) {
 		fprintf(stderr, "Error: clCreateCommandQueue %s (%d)\n", inclCheckErrorCode(errcode_ret), errcode_ret);
 		return NULL;
@@ -169,7 +169,7 @@ cl_command_queue inclCreateCommandQueue(cl_context context, cl_device_id device)
 /* Creates an OpenCL context. */
 cl_context inclCreateContext(cl_device_id device) {
 	cl_int errcode_ret;
-	cl_context context = clCreateContext(0, 1, &device, NULL, NULL, &errcode_ret);
+	cl_context context = clCreateContext(NULL, 1, &device, NULL, NULL, &errcode_ret);
 	if (errcode_ret != CL_SUCCESS || !context) {
 		fprintf(stderr, "Error: clCreateContext %s (%d)\n", inclCheckErrorCode(errcode_ret), errcode_ret);
 		return NULL;
@@ -203,8 +203,8 @@ cl_program inclCreateProgramWithBinary(cl_context context, cl_device_id device, 
 }
 
 /* Enqueues a command to indicate which device a memory object should be associated with. */
-int inclEnqueueMigrateMemObject(cl_command_queue command_queue, cl_mem mem_object, cl_mem_migration_flags flags) {
-	cl_int errcode_ret = clEnqueueMigrateMemObjects(command_queue, 1, &mem_object, flags, 0, 0, NULL);
+int inclEnqueueMigrateMemObject(cl_command_queue command_queue, cl_mem mem_object, cl_mem_migration_flags flags, cl_event *event) {
+	cl_int errcode_ret = clEnqueueMigrateMemObjects(command_queue, 1, &mem_object, flags, 0, NULL, event);
 	if (errcode_ret != CL_SUCCESS) {
 		fprintf(stderr, "Error: clEnqueueMigrateMemObjects %s (%d)\n", inclCheckErrorCode(errcode_ret), errcode_ret);
 		return EXIT_FAILURE;
@@ -214,8 +214,8 @@ int inclEnqueueMigrateMemObject(cl_command_queue command_queue, cl_mem mem_objec
 }
 
 /* Enqueue commands to read from a buffer object to host memory. */
-int inclEnqueueReadBuffer(cl_command_queue command_queue, cl_mem buffer, size_t offset, size_t cb, void *ptr) {
-	cl_int errcode_ret = clEnqueueReadBuffer(command_queue, buffer, CL_FALSE, offset, cb, ptr, 0, 0, NULL);
+int inclEnqueueReadBuffer(cl_command_queue command_queue, cl_mem buffer, size_t offset, size_t cb, void *ptr, cl_event *event) {
+	cl_int errcode_ret = clEnqueueReadBuffer(command_queue, buffer, CL_FALSE, offset, cb, ptr, 0, NULL, event);
 	if (errcode_ret != CL_SUCCESS) {
 		fprintf(stderr, "Error: clEnqueueReadBuffer %s (%d)\n", inclCheckErrorCode(errcode_ret), errcode_ret);
 		return EXIT_FAILURE;
@@ -225,8 +225,8 @@ int inclEnqueueReadBuffer(cl_command_queue command_queue, cl_mem buffer, size_t 
 }
 
 /* Enqueues a command to execute a kernel on a device. */
-int inclEnqueueTask(cl_command_queue command_queue, cl_kernel kernel) {
-	cl_int errcode_ret = clEnqueueTask(command_queue, kernel, 0, 0, NULL);
+int inclEnqueueTask(cl_command_queue command_queue, cl_kernel kernel, cl_event *event) {
+	cl_int errcode_ret = clEnqueueTask(command_queue, kernel, 0, NULL, event);
 	if (errcode_ret != CL_SUCCESS) {
 		fprintf(stderr, "Error: clEnqueueTask %s (%d)\n", inclCheckErrorCode(errcode_ret), errcode_ret);
 		return EXIT_FAILURE;
@@ -236,8 +236,8 @@ int inclEnqueueTask(cl_command_queue command_queue, cl_kernel kernel) {
 }
 
 /* Enqueue commands to write to a buffer object from host memory. */
-int inclEnqueueWriteBuffer(cl_command_queue command_queue, cl_mem buffer, size_t offset, size_t cb, const void *ptr) {
-	cl_int errcode_ret = clEnqueueWriteBuffer(command_queue, buffer, CL_FALSE, offset, cb, ptr, 0, 0, NULL);
+int inclEnqueueWriteBuffer(cl_command_queue command_queue, cl_mem buffer, size_t offset, size_t cb, const void *ptr, cl_event *event) {
+	cl_int errcode_ret = clEnqueueWriteBuffer(command_queue, buffer, CL_FALSE, offset, cb, ptr, 0, NULL, event);
 	if (errcode_ret != CL_SUCCESS) {
 		fprintf(stderr, "Error: clEnqueueWriteBuffer %s (%d)\n", inclCheckErrorCode(errcode_ret), errcode_ret);
 		return EXIT_FAILURE;
@@ -418,6 +418,17 @@ int inclReleaseContext(cl_context context) {
 	}
 }
 
+/* Decrements the event reference count. */
+int inclReleaseEvent(cl_event event) {
+	cl_int errcode_ret = clReleaseEvent(event);
+	if (errcode_ret != CL_SUCCESS) {
+		fprintf(stderr, "Error: clReleaseEvent %s (%d)\n", inclCheckErrorCode(errcode_ret), errcode_ret);
+		return EXIT_FAILURE;
+	} else {
+		return EXIT_SUCCESS;
+	}
+}
+
 /* Decrements the kernel reference count. */
 int inclReleaseKernel(cl_kernel kernel) {
 	cl_int errcode_ret = clReleaseKernel(kernel);
@@ -456,6 +467,17 @@ int inclSetKernelArg(cl_kernel kernel, cl_uint arg_index, size_t arg_size, const
 	cl_int errcode_ret = clSetKernelArg(kernel, arg_index, arg_size, arg_value);
 	if (errcode_ret != CL_SUCCESS) {
 		fprintf(stderr, "Error: clSetKernelArg %s (%d)\n", inclCheckErrorCode(errcode_ret), errcode_ret);
+		return EXIT_FAILURE;
+	} else {
+		return EXIT_SUCCESS;
+	}
+}
+
+/* Waits on the host thread for command identified by event object to complete. */
+int inclWaitForEvent(const cl_event *event) {
+	cl_int errcode_ret = clWaitForEvents(1, event);
+	if (errcode_ret != CL_SUCCESS) {
+		fprintf(stderr, "Error: clWaitForEvents %s (%d)\n", inclCheckErrorCode(errcode_ret), errcode_ret);
 		return EXIT_FAILURE;
 	} else {
 		return EXIT_SUCCESS;

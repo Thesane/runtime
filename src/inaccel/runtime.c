@@ -8,6 +8,7 @@
 /* CL buffer struct (Type). */
 struct _cl_buffer {
 	cl_command_queue command_queue;
+	cl_event event;
 	void *host_ptr;
 	cl_mem mem;
 	size_t size;
@@ -16,11 +17,13 @@ struct _cl_buffer {
 /* CL compute unit struct (Type). */
 struct _cl_compute_unit {
 	cl_command_queue command_queue;
+	cl_event event;
 	cl_kernel kernel;
 };
 
 /* CL resource struct (Type). */
 struct _cl_resource {
+	cl_command_queue command_queue;
 	cl_context context;
 	cl_device_id device_id;
 	cl_platform_id platform_id;
@@ -33,7 +36,17 @@ struct _cl_resource {
  * @return 0 on success; 1 on failure.
  */
 int await_buffer_copy(cl_buffer buffer) {
-	return inclFinish(buffer->command_queue);
+	if (buffer->event) {
+		if (inclWaitForEvent(&buffer->event)) goto CATCH;
+
+		if (inclReleaseEvent(buffer->event)) goto CATCH;
+
+		buffer->event = NULL;
+	}
+
+	return EXIT_SUCCESS;
+CATCH:
+	return EXIT_FAILURE;
 }
 
 /**
@@ -42,7 +55,17 @@ int await_buffer_copy(cl_buffer buffer) {
  * @return 0 on success; 1 on failure.
  */
 int await_compute_unit_run(cl_compute_unit compute_unit) {
-	return inclFinish(compute_unit->command_queue);
+	if (compute_unit->event) {
+		if (inclWaitForEvent(&compute_unit->event)) goto CATCH;
+
+		if (inclReleaseEvent(compute_unit->event)) goto CATCH;
+
+		compute_unit->event = NULL;
+	}
+
+	return EXIT_SUCCESS;
+CATCH:
+	return EXIT_FAILURE;
 }
 
 /**
@@ -52,10 +75,10 @@ int await_compute_unit_run(cl_compute_unit compute_unit) {
  */
 int copy_from_buffer(cl_buffer buffer) {
 #if Intel
-	return inclEnqueueReadBuffer(buffer->command_queue, buffer->mem, 0, buffer->size, buffer->host_ptr);
+	return inclEnqueueReadBuffer(buffer->command_queue, buffer->mem, 0, buffer->size, buffer->host_ptr, &buffer->event);
 #endif
 #if Xilinx
-	return inclEnqueueMigrateMemObject(buffer->command_queue, buffer->mem, 1);
+	return inclEnqueueMigrateMemObject(buffer->command_queue, buffer->mem, 1, &buffer->event);
 #endif
 }
 
@@ -66,10 +89,10 @@ int copy_from_buffer(cl_buffer buffer) {
  */
 int copy_to_buffer(cl_buffer buffer) {
 #ifdef Intel
-	return inclEnqueueWriteBuffer(buffer->command_queue, buffer->mem, 0, buffer->size, buffer->host_ptr);
+	return inclEnqueueWriteBuffer(buffer->command_queue, buffer->mem, 0, buffer->size, buffer->host_ptr, &buffer->event);
 #endif
 #ifdef Xilinx
-	return inclEnqueueMigrateMemObject(buffer->command_queue, buffer->mem, 0);
+	return inclEnqueueMigrateMemObject(buffer->command_queue, buffer->mem, 0, &buffer->event);
 #endif
 }
 
@@ -111,7 +134,7 @@ cl_buffer create_buffer(cl_resource resource, size_t size, void *host_ptr, unsig
 	if (!(buffer->mem = inclCreateBuffer(resource->context, CL_MEM_EXT_PTR | CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, size, &ext_ptr))) goto CATCH;
 #endif
 
-	if (!(buffer->command_queue = inclCreateCommandQueue(resource->context, resource->device_id))) goto CATCH;
+	buffer->command_queue = resource->command_queue;
 
 	return buffer;
 CATCH:
@@ -131,7 +154,7 @@ cl_compute_unit create_compute_unit(cl_resource resource, const char *name) {
 
 	if (!(compute_unit->kernel = inclCreateKernel(resource->program, name))) goto CATCH;
 
-	if (!(compute_unit->command_queue = inclCreateCommandQueue(resource->context, resource->device_id))) goto CATCH;
+	compute_unit->command_queue = resource->command_queue;
 
 	return compute_unit;
 CATCH:
@@ -158,6 +181,8 @@ cl_resource create_resource(unsigned int device_id) {
 	if (!(resource->device_id = inclGetDeviceID(resource->platform_id, device_id))) goto CATCH;
 
 	if (!(resource->context = inclCreateContext(resource->device_id))) goto CATCH;
+
+	if (!(resource->command_queue = inclCreateCommandQueue(resource->context, resource->device_id, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE))) goto CATCH;
 
 	return resource;
 CATCH:
@@ -373,7 +398,7 @@ CATCH:
  * @param buffer Refers to a valid buffer object.
  */
 void release_buffer(cl_buffer buffer) {
-	inclReleaseCommandQueue(buffer->command_queue);
+	if (buffer->event) inclReleaseEvent(buffer->event);
 
 	inclReleaseMemObject(buffer->mem);
 
@@ -385,7 +410,7 @@ void release_buffer(cl_buffer buffer) {
  * @param compute_unit Refers to a valid compute unit object.
  */
 void release_compute_unit(cl_compute_unit compute_unit) {
-	inclReleaseCommandQueue(compute_unit->command_queue);
+	if (compute_unit->event) inclReleaseEvent(compute_unit->event);
 
 	inclReleaseKernel(compute_unit->kernel);
 
@@ -397,6 +422,8 @@ void release_compute_unit(cl_compute_unit compute_unit) {
  * @param resource Refers to a valid resource object.
  */
 void release_resource(cl_resource resource) {
+	inclReleaseCommandQueue(resource->command_queue);
+
 	if (resource->program) inclReleaseProgram(resource->program);
 
 	inclReleaseContext(resource->context);
@@ -410,7 +437,7 @@ void release_resource(cl_resource resource) {
  * @return 0 on success; 1 on failure.
  */
 int run_compute_unit(cl_compute_unit compute_unit) {
-	return inclEnqueueTask(compute_unit->command_queue, compute_unit->kernel);
+	return inclEnqueueTask(compute_unit->command_queue, compute_unit->kernel, &compute_unit->event);
 }
 
 /**

@@ -14,7 +14,7 @@ const char *inclCheckErrorCode(cl_int errcode);
 cl_mem inclCreateBuffer(cl_context context, cl_mem_flags flags, size_t size, void *host_ptr);
 
 /* Create a command-queue on a specific device. */
-cl_command_queue inclCreateCommandQueue(cl_context context, cl_device_id device);
+cl_command_queue inclCreateCommandQueue(cl_context context, cl_device_id device,  	cl_command_queue_properties properties);
 
 /* Creates an OpenCL context. */
 cl_context inclCreateContext(const cl_device_id device);
@@ -26,16 +26,16 @@ cl_kernel inclCreateKernel(cl_program program, const char *kernel_name);
 cl_program inclCreateProgramWithBinary(cl_context context, cl_device_id device, size_t length, const unsigned char *binary);
 
 /* Enqueues a command to indicate which device a memory object should be associated with. */
-int inclEnqueueMigrateMemObject(cl_command_queue command_queue, cl_mem memobj, cl_mem_migration_flags flags);
+int inclEnqueueMigrateMemObject(cl_command_queue command_queue, cl_mem memobj, cl_mem_migration_flags flags, cl_event *event);
 
 /* Enqueue commands to read from a buffer object to host memory. */
-int inclEnqueueReadBuffer(cl_command_queue command_queue, cl_mem buffer, size_t offset, size_t cb, void *ptr);
+int inclEnqueueReadBuffer(cl_command_queue command_queue, cl_mem buffer, size_t offset, size_t cb, void *ptr, cl_event *event);
 
 /* Enqueues a command to execute a kernel on a device. */
-int inclEnqueueTask(cl_command_queue command_queue, cl_kernel kernel);
+int inclEnqueueTask(cl_command_queue command_queue, cl_kernel kernel, cl_event *event);
 
 /* Enqueue commands to write to a buffer object from host memory. */
-int inclEnqueueWriteBuffer(cl_command_queue command_queue, cl_mem buffer, size_t offset, size_t cb, const void *ptr);
+int inclEnqueueWriteBuffer(cl_command_queue command_queue, cl_mem buffer, size_t offset, size_t cb, const void *ptr, cl_event *event);
 
 /* Blocks until all previously queued OpenCL commands in a command-queue are issued to the associated device and have completed. */
 int inclFinish(cl_command_queue command_queue);
@@ -64,6 +64,9 @@ int inclReleaseCommandQueue(cl_command_queue command_queue);
 /* Decrement the context reference count. */
 int inclReleaseContext(cl_context context);
 
+/* Decrements the event reference count. */
+int inclReleaseEvent(cl_event event);
+
 /* Decrements the kernel reference count. */
 int inclReleaseKernel(cl_kernel kernel);
 
@@ -75,5 +78,8 @@ int inclReleaseProgram(cl_program program);
 
 /* Used to set the argument value for a specific argument of a kernel. */
 int inclSetKernelArg(cl_kernel kernel, cl_uint arg_index, size_t arg_size, const void *arg_value);
+
+/* Waits on the host thread for command identified by event object to complete. */
+int inclWaitForEvent(const cl_event *event);
 
 #endif
